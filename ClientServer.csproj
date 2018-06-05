@@ -42,10 +42,15 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="source\Communication\ClientTCP.cs" />
+    <Compile Include="source\Communication\ASyncServerTCP.cs" />
+    <Compile Include="source\Messages\Message.cs" />
   </ItemGroup>
   <ItemGroup>
-    <Folder Include="source\Communication\" />
-    <Folder Include="source\Messages\" />
+    <ProjectReference Include="..\Logging\Logging.csproj">
+      <Project>{5126f598-36fe-40d0-8bde-006a681ce886}</Project>
+      <Name>Logging</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
