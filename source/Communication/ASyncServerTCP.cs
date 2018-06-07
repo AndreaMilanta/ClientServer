@@ -17,7 +17,7 @@ namespace ClientServer.Communication
         public ASyncServerTCP(string name, string log) : base(log)
         {
             this.Name = name;
-            Log("Server " + name + "has been created");
+            Log("Server " + name + " has been created");
         }
 
         /// <summary>
@@ -37,7 +37,7 @@ namespace ClientServer.Communication
             }
             catch(SocketException e)
             {
-                LogException("Server setup on port " + port + " failed with error: " + e.ToString());
+                LogError("Server setup on port " + port + " failed with error: " + e.ToString());
                 throw e;
             }
         }

@@ -4,23 +4,58 @@ using System.Net.Sockets;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Formatters.Binary;
 using System.IO;
+using System.Collections.Generic;
 
 using Logging;
 using ClientServer.Messages;
+using ClientServer.Exceptions;
 
 namespace ClientServer.Communication
 {
-    abstract public class ClientTCP : Loggable
+    public class ClientTCP : Loggable
     {
-        private Socket _socket = null;
-        private byte[] _buffer = null;
-        private IFormatter formatter = new BinaryFormatter();
-        Stream _stream = null;
+        // Defines the status of the client
+        private enum Status
+        {
+            IDLE,
+            SYNC,
+            ASYNC,
+            CLOSING
+        };
 
-        public string Ip { get => ((IPEndPoint)_socket.RemoteEndPoint).Address.ToString(); }
-        public int Port { get => ((IPEndPoint)_socket.RemoteEndPoint).Port; }
-        public bool Closing { get; private set; } = false;
+        private int _failCount = 0;     // Counts the nuber of failure occured during communication
+        private int _consecutiveFailCount = 0;  // Counts the number of consecutive failures
+        private readonly int _maxFailures;
+        private readonly int _maxConsecutiveFailures;
+
+        public bool Receive { get; set; } = true;
+
+        private Socket _socket = null;
+        private byte[] _bufferIn = null;
+        private byte[] _bufferOut = null;
+        private IFormatter formatter = new BinaryFormatter();
+        Stream _streamIn = null;
+        Stream _streamOut = null;
+
+        // Remote
+        public string RemoteIp { get => ((IPEndPoint)_socket.RemoteEndPoint).Address.ToString(); }
+        public int RemotePort { get => ((IPEndPoint)_socket.RemoteEndPoint).Port; }
+        public string Remote { get => RemoteIp + ":" + RemotePort; }
+
+        // Local
+        public string LocalIp { get => ((IPEndPoint)_socket.LocalEndPoint).Address.ToString(); }
+        public int LocalPort { get => ((IPEndPoint)_socket.LocalEndPoint).Port; }
+        public string Local { get => LocalIp + ":" + LocalPort; }
+
+        // Params
+        private Status _status = Status.IDLE;
         public int BufferSize { get; private set; } = 0;
+
+        // Delegates
+        public delegate void MessageHandler(Message mex);
+        public MessageHandler HandleASyncMessage = null;
+        public MessageHandler HandleSyncMessage = null;
+
 
         /// <summary>
         /// Initializes client connection
@@ -29,22 +64,86 @@ namespace ClientServer.Communication
         /// <param name="soc"></param>
         /// <param name="bufferSize"></param>
         /// <param name="log"></param>
-        public ClientTCP(Socket soc, int bufferSize, string log) : base(log)
+        public ClientTCP(Socket soc, int bufferSize, int maxFailures, int maxContFailures, string log) : base(log)
         {
+            this._maxFailures = maxFailures;
+            this._maxConsecutiveFailures = maxContFailures;
             this._socket = soc;
-            this._stream = new MemoryStream(_buffer);
-            this._buffer = new byte[bufferSize];
+            this.BufferSize = bufferSize;
+            this._bufferIn = new byte[BufferSize];
+            this._bufferOut = new byte[BufferSize];
+            _bufferIn.Initialize();
+            _bufferOut.Initialize();
+            this._streamIn = new MemoryStream(_bufferIn);
+            this._streamOut = new MemoryStream(_bufferOut);
+            Log("New Connection to " + this.Remote);
+        }
+
+        // SYNC STUFF
+
+        /// <summary>
+        /// reads Synchronously
+        /// Exceptions are NOT handled
+        /// </summary>
+        /// <param name="timeout_s"></param>
+        public void ReadSync(float timeout_s)
+        {
+            if (_status == Status.CLOSING)
+                throw new ClientHasClosedException();
+            if (_status == Status.ASYNC)
+                throw new ASynchronousReadingInProcessException();
+            _status = Status.IDLE;
+            _socket.ReceiveTimeout = (int)(timeout_s * 1000);
+            try
+            {
+                _socket.Receive(_bufferIn, BufferSize, 0);
+            }
+            catch(Exception ex)
+            {
+                LogError("Error Sync Reading from " + this.Remote + " with Error: ");
+                throw ex;
+            }
+            HandleSyncMessage(GetMessage());
+        }
+
+        private Message GetMessage()
+        {
+            _streamIn.Position = 0;
+            try
+            {
+                Message mex = (Message)formatter.Deserialize(_streamIn);
+                _consecutiveFailCount = 0;
+                return mex;
+            }
+            catch (Exception)
+            {
+                LogError(new InvalidMessageException().ToString());
+                _failCount++;
+                _consecutiveFailCount++;
+                if (_consecutiveFailCount >= _maxConsecutiveFailures)
+                {
+                    LogError("Too many consecutive failures");
+                    this.Close();
+                }
+                if (_failCount >= _maxFailures)
+                {
+                    LogError("Too many failures");
+                    this.Close();
+                }
+                throw new InvalidMessageException();
+            }
         }
 
         /// <summary>
-        /// begins listening to client requests
+        /// begins listening to client requests asynchronously
         /// Logging is performed internally
         /// </summary>
-        public void startClient()
+        public void ReadAsync()
         {
-            _socket.BeginReceive(_buffer, 0, _buffer.Length, SocketFlags.None, new AsyncCallback(ReceviceCallback), _socket);
-            Log("Connection started with " + this.Ip + ":" + this.Port);
-            Closing = false;
+            if (_status == Status.CLOSING)
+                throw new ClientHasClosedException();
+            _status = Status.ASYNC;
+            _socket.BeginReceive(_bufferIn, 0, BufferSize, SocketFlags.None, new AsyncCallback(ReceviceCallback), _socket);
         }
 
         private void ReceviceCallback(IAsyncResult ar)
@@ -54,22 +153,16 @@ namespace ClientServer.Communication
             {
                 int receivedSize = socket.EndReceive(ar);
 
-                //Read Data
-                _stream.Position = 0;
-                byte[] databuffer = new byte[receivedSize];
-                _socket.Receive(databuffer, receivedSize, 0);
-                Array.Copy(_buffer, databuffer, receivedSize);
-
-                //Get original type
-                Message recMex = (Message)formatter.Deserialize(_stream);
-
-                //Handle data
-                HandleNewMessage(recMex);
+                //Read Data if available, otherwise restart listening
+                if (receivedSize > 0)
+                    HandleASyncMessage(GetMessage());
+                else
+                    ReadAsync();
             }
-            catch (IOException e)
+            catch (Exception ex)
             {
-                LogException("Error Reading from " + Ip + " due to error; " + e.ToString());
-                Close();
+                LogError("Error ASync Reading from " + this.Remote + " due to error; " + ex.ToString());
+                throw ex;
             }
         }
 
@@ -83,15 +176,16 @@ namespace ClientServer.Communication
         {
             try
             {
-                formatter.Serialize(_stream, mex);
-                _stream.Flush();
-                _socket.Send(_buffer, _buffer.Length, 0);
-                _stream.Position = 0;
+                formatter.Serialize(_streamOut, mex);
+                _streamOut.Flush();
+                int sent = _socket.Send(_bufferOut, BufferSize, 0);
+                _streamOut.Position = 0;
+                _bufferOut.Initialize();
             }
             catch(IOException e)
             {
-                LogException("Message to " + Ip + " failed with error: " + e.ToString());
-                throw e;
+                LogError("Message to " + this.Remote + " failed with error: " + e.ToString());
+                throw new ClientHasClosedException();
             }
         }
 
@@ -101,15 +195,8 @@ namespace ClientServer.Communication
         /// </summary>
         public void Close()
         {
-            this.Closing = true;
+            Log("Connection from " + this.Remote + " has been terminated");
             this._socket.Close();
-            Log("Connection from " + this.Ip + " has been terminated");
         }
-
-        /// <summary>
-        /// Handles newly received message
-        /// </summary>
-        /// <param name="mex"></param>
-        protected abstract void HandleNewMessage(Message mex);
     }
 }
