@@ -1,13 +1,16 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 
 using Logging;
 using ClientServer.Messages;
+using ClientServer.Exceptions;
 
 namespace ClientServer.Communication
 {
     public abstract class ClientWrapper : Loggable
     {
         protected ClientTCP Client { get; set; }
+        public bool Closed { get => Client.Closed; }
 
         public ClientWrapper(ClientTCP client, string logger) : base(logger)
         {
@@ -19,9 +22,9 @@ namespace ClientServer.Communication
             this.Client = null;
         }
 
-        public void ReadAsync()
+        public void ReadASync(bool continuous)
         {
-            Client.ReadAsync();
+            Client.ReadASync(continuous);
         }
 
         public void ReadSync(int timeout_s)
@@ -44,12 +47,23 @@ namespace ClientServer.Communication
             {
                 LogException(ex);
                 this.Close();
+                throw new ClientHasClosedException();
             }
         }
 
-        public void Close()
+        /// <summary>
+        /// Closes communication
+        /// </summary>
+        /// <param name="notification">optional notification message to send before closing</param>
+        public void Close(Message notification = null)
         {
-            Client.Close();
+            try
+            {
+                if (notification != null)
+                    Client.Write(notification);
+                Client.Close();
+            }
+            catch(ClientHasClosedException) { }
         }
     }
 }

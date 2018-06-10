@@ -23,12 +23,14 @@ namespace ClientServer.Communication
             CLOSING
         };
 
-        private int _failCount = 0;     // Counts the nuber of failure occured during communication
+        private bool _continuousASync = false;  // defines whether to keep on ASyinchorounusly read or stop at next received mex
+        private int _failCount = 0;             // Counts the nuber of failure occured during communication
         private int _consecutiveFailCount = 0;  // Counts the number of consecutive failures
         private readonly int _maxFailures;
         private readonly int _maxConsecutiveFailures;
 
         public bool Receive { get; set; } = true;
+        public bool Closed { get => (this._status == Status.CLOSING) ? true : false; }
 
         private Socket _socket = null;
         private byte[] _bufferIn = null;
@@ -138,16 +140,28 @@ namespace ClientServer.Communication
         /// begins listening to client requests asynchronously
         /// Logging is performed internally
         /// </summary>
-        public void ReadAsync()
+        public void ReadASync(bool continuous)
         {
             if (_status == Status.CLOSING)
                 throw new ClientHasClosedException();
+            this._continuousASync = continuous;
+            if (_status == Status.ASYNC)                // if already reading, keep reading
+                return;
             _status = Status.ASYNC;
-            _socket.BeginReceive(_bufferIn, 0, BufferSize, SocketFlags.None, new AsyncCallback(ReceviceCallback), _socket);
+            try
+            {
+                _socket.BeginReceive(_bufferIn, 0, BufferSize, SocketFlags.None, new AsyncCallback(ReceviceCallback), _socket);
+            }
+            catch (ObjectDisposedException)
+            {
+                this.Close();
+            }
         }
 
         private void ReceviceCallback(IAsyncResult ar)
         {
+            if (_status == Status.CLOSING)                  // Exceptions cannot be handled asynchronously
+                return;                                 
             Socket socket = (Socket)ar.AsyncState;
             try
             {
@@ -157,13 +171,22 @@ namespace ClientServer.Communication
                 if (receivedSize > 0)
                     HandleASyncMessage(GetMessage());
                 else
-                    ReadAsync();
+                    ReadASync(_continuousASync);
+            }
+            catch (ObjectDisposedException)
+            {
+                this.Close();
+                return;
             }
             catch (Exception ex)
             {
                 LogError("Error ASync Reading from " + this.Remote + " due to error; " + ex.ToString());
-                throw ex;
+                this.Close();
+                return;
             }
+            _status = Status.IDLE;
+            if (_continuousASync)
+                    ReadASync(_continuousASync);
         }
 
         /// <summary>
@@ -174,6 +197,8 @@ namespace ClientServer.Communication
         /// <exception cref="IOException">Generic IO exception</exception>
         public void Write(Message mex)
         {
+            if (_status == Status.CLOSING)
+                throw new ClientHasClosedException();
             try
             {
                 formatter.Serialize(_streamOut, mex);
@@ -185,7 +210,12 @@ namespace ClientServer.Communication
             catch(IOException e)
             {
                 LogError("Message to " + this.Remote + " failed with error: " + e.ToString());
-                throw new ClientHasClosedException();
+                this.Close();
+            }
+            catch(SocketException e)
+            {
+                LogError(this.Remote + " failed with error: " + e.ToString());
+                this.Close();
             }
         }
 
@@ -195,8 +225,13 @@ namespace ClientServer.Communication
         /// </summary>
         public void Close()
         {
-            Log("Connection from " + this.Remote + " has been terminated");
-            this._socket.Close();
+            this._status = Status.CLOSING;
+            try
+            {
+                Log("Connection from " + this.Remote + " has been terminated");
+                this._socket.Close();
+            }
+            catch (ObjectDisposedException) { }
         }
     }
 }
