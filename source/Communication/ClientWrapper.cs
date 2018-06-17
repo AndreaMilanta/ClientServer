@@ -7,7 +7,7 @@ using ClientServer.Exceptions;
 
 namespace ClientServer.Communication
 {
-    public abstract class ClientWrapper : Loggable
+    public class ClientWrapper : Loggable
     {
         protected ClientTCP Client { get; set; }
         public bool Closed { get => Client.Closed; }
@@ -49,6 +49,17 @@ namespace ClientServer.Communication
                 this.Close();
                 throw new ClientHasClosedException();
             }
+        }
+
+        public ClientTCP.MessageHandler HandleASyncMessage { set => Client.HandleASyncMessage += value; }
+        public ClientTCP.MessageHandler HandleSyncMessage { set => Client.HandleSyncMessage += value; }
+        public void ClearSyncHandlers()
+        {
+            Client.HandleSyncMessage = null;
+        }
+        public void ClearASyncHandlers()
+        {
+            Client.HandleASyncMessage = null;
         }
 
         /// <summary>
