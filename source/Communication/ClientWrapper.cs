@@ -22,12 +22,12 @@ namespace ClientServer.Communication
             this.Client = null;
         }
 
-        public void ReadASync(bool continuous)
+        public virtual void ReadASync(bool continuous)
         {
             Client.ReadASync(continuous);
         }
 
-        public void ReadSync(int timeout_s)
+        public virtual void ReadSync(int timeout_s)
         {
             Client.ReadSync(timeout_s);
         }
@@ -37,7 +37,7 @@ namespace ClientServer.Communication
         /// </summary>
         /// <param name="mex"></param>
         /// <exception cref="ClientHasClosedException"></exception>
-        public void Write(Message mex)
+        public virtual void Write(Message mex)
         {
             try
             {
@@ -66,7 +66,7 @@ namespace ClientServer.Communication
         /// Closes communication
         /// </summary>
         /// <param name="notification">optional notification message to send before closing</param>
-        public void Close(Message notification = null)
+        public virtual void Close(Message notification = null)
         {
             try
             {
