@@ -56,7 +56,6 @@ namespace ClientServer.Communication
         // Delegates
         public delegate void MessageHandler(Message mex);
         public MessageHandler HandleASyncMessage = null;
-        public MessageHandler HandleSyncMessage = null;
 
 
         /// <summary>
@@ -88,7 +87,7 @@ namespace ClientServer.Communication
         /// Exceptions are NOT handled
         /// </summary>
         /// <param name="timeout_s"></param>
-        public void ReadSync(float timeout_s)
+        public Message ReadSync(float timeout_s)
         {
             if (_status == Status.CLOSING)
                 throw new ClientHasClosedException();
@@ -105,7 +104,7 @@ namespace ClientServer.Communication
                 LogError("Error Sync Reading from " + this.Remote + " with Error: ");
                 throw ex;
             }
-            HandleSyncMessage(GetMessage());
+            return GetMessage();
         }
 
         private Message GetMessage()

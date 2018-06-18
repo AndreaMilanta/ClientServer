@@ -27,9 +27,9 @@ namespace ClientServer.Communication
             Client.ReadASync(continuous);
         }
 
-        public virtual void ReadSync(int timeout_s)
+        public virtual Message ReadSync(int timeout_s)
         {
-            Client.ReadSync(timeout_s);
+            return Client.ReadSync(timeout_s);
         }
 
         /// <summary>
@@ -52,11 +52,6 @@ namespace ClientServer.Communication
         }
 
         public ClientTCP.MessageHandler HandleASyncMessage { set => Client.HandleASyncMessage += value; }
-        public ClientTCP.MessageHandler HandleSyncMessage { set => Client.HandleSyncMessage += value; }
-        public void ClearSyncHandlers()
-        {
-            Client.HandleSyncMessage = null;
-        }
         public void ClearASyncHandlers()
         {
             Client.HandleASyncMessage = null;
