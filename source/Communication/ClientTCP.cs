@@ -36,7 +36,7 @@ namespace ClientServer.Communication
         private byte[] _bufferIn = null;
         private byte[] _bufferOut = null;
         private IFormatter formatter = new BinaryFormatter();
-        Stream _streamIn = null;
+        //Stream _streamIn = null;
         Stream _streamOut = null;
         private int _bytesRead = 0;
 
@@ -86,7 +86,7 @@ namespace ClientServer.Communication
             this._bufferOut = new byte[BufferSize];
             _bufferIn.Initialize();
             _bufferOut.Initialize();
-            this._streamIn = new MemoryStream(_bufferIn);
+            //this._streamIn = new MemoryStream(_bufferIn);
             this._streamOut = new MemoryStream(_bufferOut);
             Log("New Connection to " + this.Remote);
         }
@@ -106,16 +106,19 @@ namespace ClientServer.Communication
                 throw new ASynchronousReadingInProcessException();
             _status = Status.IDLE;
             _socket.ReceiveTimeout = (int)(timeout_s * 1000);
+            byte[] bufferIn = new byte[BufferSize];
             try
             {
-                _socket.Receive(_bufferIn, BufferSize, 0);
+                //_socket.Receive(_bufferIn, BufferSize, 0);
+                _socket.Receive(bufferIn, BufferSize, 0);
             }
             catch(Exception ex)
             {
                 LogError("Error Sync Reading from " + this.Remote + " with Error: " + ex.ToString());
                 throw ex;
             }
-            return GetMessage(_bufferIn);
+            //return GetMessage(_bufferIn);
+            return GetMessage(bufferIn);
         }
 
         private Message GetMessage(byte[] buffer)
@@ -152,7 +155,7 @@ namespace ClientServer.Communication
         /// begins listening to client requests asynchronously
         /// Logging is performed internally
         /// </summary>
-        public void ReadASync(bool continuous)
+        public void ReadASync(bool continuous, int delta = 0)
         {
             if (_status == Status.CLOSING)
                 throw new ClientHasClosedException();
@@ -162,9 +165,9 @@ namespace ClientServer.Communication
             _status = Status.ASYNC;
             try
             {
-                StateObject so = new StateObject(this._socket, BufferSize);
-                //_socket.BeginReceive(_bufferIn, 0, BufferSize, SocketFlags.None, new AsyncCallback(ReceviceCallback), _socket);
-                _socket.BeginReceive(so.Buffer, 0, BufferSize, SocketFlags.None, new AsyncCallback(ReceviceCallback), so);
+                //StateObject so = new StateObject(this._socket, BufferSize);
+                _socket.BeginReceive(_bufferIn, delta, BufferSize-delta, SocketFlags.None, new AsyncCallback(ReceviceCallback), _socket);
+                //_socket.BeginReceive(so.Buffer, delta, BufferSize-delta, SocketFlags.None, new AsyncCallback(ReceviceCallback), so);
             }
             catch (ObjectDisposedException)
             {
@@ -176,21 +179,23 @@ namespace ClientServer.Communication
         {
             if (_status == Status.CLOSING)                  // Exceptions cannot be handled asynchronously
                 return;
-            //Socket socket = (Socket)ar.AsyncState;
-            StateObject so = (StateObject)ar.AsyncState;
-            Socket socket = so.Socket;
+            Socket socket = (Socket)ar.AsyncState;
+            //StateObject so = (StateObject)ar.AsyncState;
+            //Socket socket = so.Socket;
             try
             {
                
                 _bytesRead += socket.EndReceive(ar);
+                _status = Status.IDLE;
                 if (_bytesRead < BufferSize) {
                     Log("Received " + _bytesRead + " bytes");
-                    ReadASync(_continuousASync);
+                    ReadASync(_continuousASync, _bytesRead);
                     return;
                 }
                 Log("Received " + _bytesRead + " bytes: reading");
                 _bytesRead = 0;
-                HandleASyncMessage(GetMessage(so.Buffer));
+                //HandleASyncMessage(GetMessage(so.Buffer));
+                HandleASyncMessage(GetMessage(_bufferIn));
 
                 //else
                 //    ReadASync(_continuousASync);
