@@ -188,11 +188,11 @@ namespace ClientServer.Communication
                 _bytesRead += socket.EndReceive(ar);
                 _status = Status.IDLE;
                 if (_bytesRead < BufferSize) {
-                    Log("Received " + _bytesRead + " bytes");
+                    //Log("Received " + _bytesRead + " bytes");
                     ReadASync(_continuousASync, _bytesRead);
                     return;
                 }
-                Log("Received " + _bytesRead + " bytes: reading");
+                //Log("Received " + _bytesRead + " bytes: reading");
                 _bytesRead = 0;
                 //HandleASyncMessage(GetMessage(so.Buffer));
                 HandleASyncMessage(GetMessage(_bufferIn));
