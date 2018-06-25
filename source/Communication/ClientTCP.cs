@@ -38,6 +38,7 @@ namespace ClientServer.Communication
         private IFormatter formatter = new BinaryFormatter();
         Stream _streamIn = null;
         Stream _streamOut = null;
+        private int _bytesRead = 0;
 
         // Remote
         public string RemoteIp { get => ((IPEndPoint)_socket.RemoteEndPoint).Address.ToString(); }
@@ -57,6 +58,16 @@ namespace ClientServer.Communication
         public delegate void MessageHandler(Message mex);
         public MessageHandler HandleASyncMessage = null;
 
+        private class StateObject
+        {
+            public Socket Socket = null;
+            public byte[] Buffer;
+            public StateObject(Socket socket, int bufferSize)
+            {
+                this.Socket = socket;
+                this.Buffer = new byte[bufferSize];
+            }
+        }
 
         /// <summary>
         /// Initializes client connection
@@ -104,21 +115,23 @@ namespace ClientServer.Communication
                 LogError("Error Sync Reading from " + this.Remote + " with Error: " + ex.ToString());
                 throw ex;
             }
-            return GetMessage();
+            return GetMessage(_bufferIn);
         }
 
-        private Message GetMessage()
+        private Message GetMessage(byte[] buffer)
         {
-            _streamIn.Position = 0;
+            //_streamIn.Position = 0;
+            Stream streamIn = new MemoryStream(buffer);
             try
             {
-                Message mex = (Message)formatter.Deserialize(_streamIn);
+                //Message mex = (Message)formatter.Deserialize(_streamIn);
+                Message mex = (Message)formatter.Deserialize(streamIn);
                 _consecutiveFailCount = 0;
                 return mex;
             }
-            catch (Exception)
+            catch (Exception e)
             {
-                LogError(new InvalidMessageException().ToString());
+                LogError(e.ToString());
                 _failCount++;
                 _consecutiveFailCount++;
                 if (_consecutiveFailCount >= _maxConsecutiveFailures)
@@ -149,7 +162,9 @@ namespace ClientServer.Communication
             _status = Status.ASYNC;
             try
             {
-                _socket.BeginReceive(_bufferIn, 0, BufferSize, SocketFlags.None, new AsyncCallback(ReceviceCallback), _socket);
+                StateObject so = new StateObject(this._socket, BufferSize);
+                //_socket.BeginReceive(_bufferIn, 0, BufferSize, SocketFlags.None, new AsyncCallback(ReceviceCallback), _socket);
+                _socket.BeginReceive(so.Buffer, 0, BufferSize, SocketFlags.None, new AsyncCallback(ReceviceCallback), so);
             }
             catch (ObjectDisposedException)
             {
@@ -160,17 +175,25 @@ namespace ClientServer.Communication
         private void ReceviceCallback(IAsyncResult ar)
         {
             if (_status == Status.CLOSING)                  // Exceptions cannot be handled asynchronously
-                return;                                 
-            Socket socket = (Socket)ar.AsyncState;
+                return;
+            //Socket socket = (Socket)ar.AsyncState;
+            StateObject so = (StateObject)ar.AsyncState;
+            Socket socket = so.Socket;
             try
             {
-                int receivedSize = socket.EndReceive(ar);
-
-                //Read Data if available, otherwise restart listening
-                if (receivedSize > 0)
-                    HandleASyncMessage(GetMessage());
-                else
+               
+                _bytesRead += socket.EndReceive(ar);
+                if (_bytesRead < BufferSize) {
+                    Log("Received " + _bytesRead + " bytes");
                     ReadASync(_continuousASync);
+                    return;
+                }
+                Log("Received " + _bytesRead + " bytes: reading");
+                _bytesRead = 0;
+                HandleASyncMessage(GetMessage(so.Buffer));
+
+                //else
+                //    ReadASync(_continuousASync);
             }
             catch (ObjectDisposedException)
             {
