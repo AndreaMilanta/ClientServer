@@ -101,7 +101,7 @@ namespace ClientServer.Communication
             }
             catch(Exception ex)
             {
-                LogError("Error Sync Reading from " + this.Remote + " with Error: ");
+                LogError("Error Sync Reading from " + this.Remote + " with Error: " + ex.ToString());
                 throw ex;
             }
             return GetMessage();
@@ -179,8 +179,8 @@ namespace ClientServer.Communication
             }
             catch (Exception ex)
             {
-                LogError("Error ASync Reading from " + this.Remote + " due to error; " + ex.ToString());
-                this.Close();
+                LogError("Error ASync Reading from " + this.Remote + " due to error " + ex.ToString());
+                //this.Close();
                 return;
             }
             _status = Status.IDLE;

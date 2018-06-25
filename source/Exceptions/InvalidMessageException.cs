@@ -6,7 +6,7 @@ namespace ClientServer.Exceptions
     {
         public override string ToString()
         {
-            return "Invalid Message receivd";
+            return "Invalid Message received";
         }
     }
 }
